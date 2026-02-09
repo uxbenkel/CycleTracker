@@ -6,27 +6,32 @@
 //
 
 import SwiftUI
-import SwiftData
 
 @main
 struct CycleTrackerApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    // 使用 StateObject 在应用级别创建并持有数据模型
+    @StateObject private var eventStore = EventStore()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            MainTabView()
+                .environmentObject(eventStore)  // 注入环境对象
+                .preferredColorScheme(.light)  // 可选：设置默认色彩模式
         }
-        .modelContainer(sharedModelContainer)
+    }
+}
+
+struct MainTabView: View {
+    var body: some View {
+        TabView {
+            EventListView()
+                .tabItem {
+                    Label("事件", systemImage: "list.bullet")
+                }
+            SettingsView()
+                .tabItem {
+                    Label("设置", systemImage: "gear")
+                }
+        }
     }
 }

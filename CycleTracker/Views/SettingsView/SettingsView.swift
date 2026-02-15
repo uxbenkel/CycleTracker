@@ -8,17 +8,60 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+import UIKit
+// MARK: - UIKit 文件选择器包装器 (针对重签名环境优化)
+struct DocumentPicker: UIViewControllerRepresentable {
+    let types: [UTType]
+    let onPick: (URL) -> Void
+    let onCancel: () -> Void
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        // asCopy: true 模式会将文件拷贝到沙盒内，解决重签名权限无法读取外部文件的问题
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: types, asCopy: true)
+        picker.delegate = context.coordinator
+        picker.allowsMultipleSelection = false
+        picker.shouldShowFileExtensions = true
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIDocumentPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        var parent: DocumentPicker
+        init(_ parent: DocumentPicker) { self.parent = parent }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            guard let url = urls.first else { return }
+            parent.onPick(url)
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            parent.onCancel()
+        }
+    }
+}
+
+// MARK: - 3. 主视图
 struct SettingsView: View {
     @EnvironmentObject var eventStore: EventStore
-    @State private var showingImportPicker = false
+    
+    // 状态控制
+    @State private var showingPicker = false
+    @State private var pickerMode: PickerMode = .none
+    enum PickerMode { case none, importTxt, restoreBackup }
+    
     @State private var showingExportPicker = false
-    @State private var showingBackupRestorePicker = false
     @State private var backupDocument: CycleTrackerBackupDocument?
+    
     @State private var showingAlert = false
     @State private var alertMessage = ""
     @State private var alertTitle = "提示"
 
-    // 恢复相关状态
+    // 恢复确认相关
     @State private var showingRestoreConfirm = false
     @State private var pendingRestoreEvents: [TrackedEvent]? = nil
 
@@ -26,21 +69,19 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 Section {
-                    Button(action: { showingImportPicker = true }) {
+                    // 按钮 1：导入文本数据
+                    Button(action: {
+                        pickerMode = .importTxt
+                        showingPicker = true
+                    }) {
                         SettingsRowView(
                             iconName: "square.and.arrow.down",
                             title: "导入数据",
                             subtitle: "从文本文件导入事件记录"
                         )
                     }
-                    .fileImporter(
-                        isPresented: $showingImportPicker,
-                        allowedContentTypes: [.importedText],
-                        allowsMultipleSelection: false
-                    ) { result in
-                        handleImportFile(result: result)
-                    }
 
+                    // 按钮 2：备份数据
                     Button(action: { prepareAndExportBackup() }) {
                         SettingsRowView(
                             iconName: "square.and.arrow.up",
@@ -52,25 +93,21 @@ struct SettingsView: View {
                         isPresented: $showingExportPicker,
                         document: backupDocument,
                         contentType: .cycleTrackerBackup,
-                        defaultFilename:
-                            "CycleTracker_Backup_\(formattedDate()).ctbackup"
+                        defaultFilename: "CycleTracker_Backup_\(formattedDate()).ctbackup"
                     ) { result in
                         handleExportFile(result: result)
                     }
 
-                    Button(action: { showingBackupRestorePicker = true }) {
+                    // 按钮 3：恢复备份
+                    Button(action: {
+                        pickerMode = .restoreBackup
+                        showingPicker = true
+                    }) {
                         SettingsRowView(
                             iconName: "arrow.clockwise",
                             title: "恢复数据",
                             subtitle: "从备份文件恢复数据"
                         )
-                    }
-                    .fileImporter(
-                        isPresented: $showingBackupRestorePicker,
-                        allowedContentTypes: [.cycleTrackerBackup],
-                        allowsMultipleSelection: false
-                    ) { result in
-                        handleRestoreBackup(result: result)
                     }
                 } header: {
                     Text("数据管理")
@@ -89,11 +126,29 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("设置")
+            
+            // MARK: - UIKit 文件选择器 Sheet
+            .sheet(isPresented: $showingPicker) {
+                DocumentPicker(
+                    // 根据模式限定可选类型
+                    types: pickerMode == .importTxt ? [.plainText] : [.cycleTrackerBackup],
+                    onPick: { url in
+                        handlePickedFile(url: url)
+                    },
+                    onCancel: {
+                        pickerMode = .none
+                    }
+                )
+            }
+            
+            // 通用提示 Alert
             .alert(alertTitle, isPresented: $showingAlert) {
                 Button("确定", role: .cancel) {}
             } message: {
                 Text(alertMessage)
             }
+            
+            // 恢复确认对话框
             .alert("恢复确认", isPresented: $showingRestoreConfirm) {
                 Button("恢复", role: .destructive) {
                     if let events = pendingRestoreEvents {
@@ -109,16 +164,8 @@ struct SettingsView: View {
                 }
             } message: {
                 if let events = pendingRestoreEvents {
-                    let eventCount = events.count
-                    let totalRecords = events.reduce(0) {
-                        $0 + $1.history.count
-                    }
-
-                    return Text(
-                        "确定要恢复备份数据吗？\n\n" + "这将覆盖当前的所有数据。\n" + "备份包含：\n"
-                            + "• \(eventCount) 个事件\n"
-                            + "• \(totalRecords) 条历史记录\n\n" + "此操作不可撤销。"
-                    )
+                    let totalRecords = events.reduce(0) { $0 + $1.history.count }
+                    return Text("确定要恢复备份数据吗？\n\n这将覆盖当前的所有数据。\n包含：\n• \(events.count) 个事件\n• \(totalRecords) 条记录\n\n此操作不可撤销。")
                 } else {
                     return Text("没有要恢复的数据。")
                 }
@@ -126,48 +173,32 @@ struct SettingsView: View {
         }
     }
 
-    // 导入文本文件的处理逻辑
-    private func handleImportFile(result: Result<[URL], Error>) {
+    // MARK: - 结果分发逻辑
+    private func handlePickedFile(url: URL) {
+        // 在主线程处理读取逻辑
+        DispatchQueue.main.async {
+            if pickerMode == .importTxt {
+                processImport(url: url)
+            } else if pickerMode == .restoreBackup {
+                processRestore(url: url)
+            }
+            pickerMode = .none
+        }
+    }
+
+    // MARK: - 导入文本逻辑
+    private func processImport(url: URL) {
         do {
-            guard let selectedFile = try result.get().first else {
-                alertMessage = "未选择文件。"
-                showingAlert = true
-                return
-            }
-
-            // 重要：需要先请求安全访问权限
-            guard selectedFile.startAccessingSecurityScopedResource() else {
-                alertMessage = "无法访问文件，权限被拒绝。"
-                showingAlert = true
-                return
-            }
-
-            defer { selectedFile.stopAccessingSecurityScopedResource() }
-
-            let fileContent = try String(
-                contentsOf: selectedFile,
-                encoding: .utf8
-            )
+            let fileContent = try String(contentsOf: url, encoding: .utf8)
             let dateStrings = fileContent.components(separatedBy: .newlines)
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
 
             let dateFormatter = DateFormatter()
             dateFormatter.locale = Locale(identifier: "zh_CN")
-
-            // 支持多种日期格式
-            let dateFormats = [
-                "yyyy-MM-dd",
-                "yyyy/MM/dd",
-                "yyyy.MM.dd",
-                "yyyy年MM月dd日",
-                "MM/dd/yyyy",
-                "dd/MM/yyyy",
-            ]
+            let dateFormats = ["yyyy-MM-dd", "yyyy/MM/dd", "yyyy.MM.dd", "yyyy年MM月dd日", "MM/dd/yyyy", "dd/MM/yyyy"]
 
             var parsedDates: [Date] = []
-            var failedDates: [String] = []
-
             for dateString in dateStrings {
                 var dateParsed: Date?
                 for format in dateFormats {
@@ -177,81 +208,70 @@ struct SettingsView: View {
                         break
                     }
                 }
-
-                if let validDate = dateParsed {
-                    parsedDates.append(validDate)
-                } else {
-                    failedDates.append(dateString)
-                }
+                if let validDate = dateParsed { parsedDates.append(validDate) }
             }
 
             if !parsedDates.isEmpty {
-
-                // 导入到置顶事件
+                let sortedDates = parsedDates.sorted(by: >)
                 if let pinnedEvent = eventStore.pinnedEvent {
-                    // 确保日期正确排序
-                    let sortedDates = parsedDates.sorted(by: >)
-                    eventStore.importDates(
-                        sortedDates,
-                        forEventId: pinnedEvent.id
-                    )
-
+                    eventStore.importDates(sortedDates, forEventId: pinnedEvent.id)
                     alertTitle = "导入成功"
-                    alertMessage =
-                        "已成功将 \(parsedDates.count) 条日期记录导入到置顶事件「\(pinnedEvent.name)」。\n\n日期已按从新到旧排序。"
-                    showingAlert = true
+                    alertMessage = "已成功导入 \(parsedDates.count) 条日期记录到「\(pinnedEvent.name)」。"
+                } else if let firstEvent = eventStore.events.first {
+                    eventStore.importDates(sortedDates, forEventId: firstEvent.id)
+                    alertTitle = "导入成功"
+                    alertMessage = "已将记录导入到「\(firstEvent.name)」。"
                 } else {
-                    // 如果没有置顶事件，导入到第一个事件
-                    if let firstEventId = eventStore.events.first?.id,
-                        let firstEvent = eventStore.events.first
-                    {
-                        let sortedDates = parsedDates.sorted(by: >)
-                        eventStore.importDates(
-                            sortedDates,
-                            forEventId: firstEventId
-                        )
-
-                        alertTitle = "导入成功"
-                        alertMessage =
-                            "没有置顶事件，已将 \(parsedDates.count) 条日期记录导入到第一个事件「\(firstEvent.name)」。\n\n日期已按从新到旧排序。"
-                        showingAlert = true
-                    } else {
-                        alertTitle = "导入失败"
-                        alertMessage = "没有找到可导入的事件。请先创建一个事件。"
-                        showingAlert = true
-                    }
+                    alertTitle = "错误"
+                    alertMessage = "没有找到可导入的事件。请先创建一个事件。"
                 }
             } else {
                 alertTitle = "导入失败"
-                if !failedDates.isEmpty {
-                    alertMessage =
-                        "文件中的日期格式无法识别。\n支持的格式：YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD"
-                } else {
-                    alertMessage = "文件中没有找到有效的日期数据。"
-                }
+                alertMessage = "未能识别文件中的日期数据，请确保格式正确。"
             }
             showingAlert = true
-
         } catch {
-            alertTitle = "导入失败"
-            alertMessage = "读取文件失败: \(error.localizedDescription)"
+            alertTitle = "错误"
+            alertMessage = "读取失败: \(error.localizedDescription)"
             showingAlert = true
         }
     }
 
-    // 准备备份文件
+    // MARK: - 恢复备份逻辑
+    private func processRestore(url: URL) {
+        do {
+            let data = try Data(contentsOf: url)
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            let restoredEvents = try decoder.decode([TrackedEvent].self, from: data)
+
+            if !restoredEvents.isEmpty {
+                pendingRestoreEvents = restoredEvents
+                showingRestoreConfirm = true
+            } else {
+                alertTitle = "失败"
+                alertMessage = "备份文件内没有发现有效数据。"
+                showingAlert = true
+            }
+        } catch {
+            alertTitle = "解析失败"
+            alertMessage = "无法识别该备份文件，可能已损坏或格式不正确。"
+            showingAlert = true
+        }
+    }
+
+    // MARK: - 备份导出逻辑
     private func prepareAndExportBackup() {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             encoder.dateEncodingStrategy = .iso8601
-
             let data = try encoder.encode(eventStore.events)
             backupDocument = CycleTrackerBackupDocument(data: data)
             showingExportPicker = true
         } catch {
             alertTitle = "备份失败"
-            alertMessage = "创建备份文件失败: \(error.localizedDescription)"
+            alertMessage = error.localizedDescription
             showingAlert = true
         }
     }
@@ -260,75 +280,13 @@ struct SettingsView: View {
         switch result {
         case .success(let url):
             alertTitle = "备份成功"
-            alertMessage = "备份文件已保存到：\n\(url.lastPathComponent)"
+            alertMessage = "已成功保存: \(url.lastPathComponent)"
         case .failure(let error):
             alertTitle = "导出失败"
-            alertMessage = "导出失败: \(error.localizedDescription)"
+            alertMessage = error.localizedDescription
         }
         showingAlert = true
         backupDocument = nil
-    }
-
-    // 从备份文件恢复
-    private func handleRestoreBackup(result: Result<[URL], Error>) {
-        do {
-            guard let selectedFile = try result.get().first else {
-                alertMessage = "未选择文件。"
-                showingAlert = true
-                return
-            }
-
-            guard selectedFile.startAccessingSecurityScopedResource() else {
-                alertMessage = "无法访问文件，权限被拒绝。"
-                showingAlert = true
-                return
-            }
-
-            defer { selectedFile.stopAccessingSecurityScopedResource() }
-
-            let data = try Data(contentsOf: selectedFile)
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-
-            let restoredEvents = try decoder.decode(
-                [TrackedEvent].self,
-                from: data
-            )
-
-            if !restoredEvents.isEmpty {
-                // 显示确认对话框
-                pendingRestoreEvents = restoredEvents
-                showingRestoreConfirm = true
-            } else {
-                alertTitle = "恢复失败"
-                alertMessage = "备份文件中没有找到有效数据。"
-                showingAlert = true
-            }
-
-        } catch let DecodingError.dataCorrupted(context) {
-            alertTitle = "恢复失败"
-            alertMessage = "数据损坏: \(context.debugDescription)"
-            showingAlert = true
-        } catch let DecodingError.keyNotFound(key, context) {
-            alertTitle = "恢复失败"
-            alertMessage =
-                "键 '\(key.stringValue)' 未找到: \(context.debugDescription)\n路径: \(context.codingPath)"
-            showingAlert = true
-        } catch let DecodingError.valueNotFound(value, context) {
-            alertTitle = "恢复失败"
-            alertMessage =
-                "值 '\(value)' 未找到: \(context.debugDescription)\n路径: \(context.codingPath)"
-            showingAlert = true
-        } catch let DecodingError.typeMismatch(type, context) {
-            alertTitle = "恢复失败"
-            alertMessage =
-                "类型 '\(type)' 不匹配: \(context.debugDescription)\n路径: \(context.codingPath)"
-            showingAlert = true
-        } catch {
-            alertTitle = "恢复失败"
-            alertMessage = "读取备份失败: \(error.localizedDescription)"
-            showingAlert = true
-        }
     }
 
     private func formattedDate() -> String {

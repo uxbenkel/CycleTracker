@@ -31,6 +31,7 @@
             <array>
                 <string>public.json</string>
                 <string>public.data</string>
+                <string>public.content</string>
             </array>
             <key>UTTypeTagSpecification</key>
             <dict>
@@ -38,8 +39,6 @@
                 <array>
                     <string>ctbackup</string>
                 </array>
-                <key>public.mime-type</key>
-                    <string>application/json</string>
             </dict>
         </dict>
     </array>
@@ -60,26 +59,22 @@
             </array>
         </dict>
     </array>
-    
-    <!-- 修复警告：支持在位置打开文档 -->
+    <!-- 关键修复：设为 false 以强制系统使用“拷贝模式”，解决权限不足导致的无响应 -->
     <key>LSSupportsOpeningDocumentsInPlace</key>
-    <true/>
+    <false/>
     
-    <!-- 修复警告：支持文档浏览器 -->
+    <!-- 关键修复：设为 false，并删除之前错误的数组定义 -->
     <key>UISupportsDocumentBrowser</key>
     <false/>
+    
+    <!-- 开启文件分享（可以在电脑上通过 Finder 查看 App 文件） -->
+    <key>UIFileSharingEnabled</key>
+    <true/>
     
     <!-- 支持的接口方向 -->
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
-    </array>
-    <key>UISupportsDocumentBrowser</key>
-    <array>
-        <string>UIInterfaceOrientationPortrait</string>
-        <string>UIInterfaceOrientationPortraitUpsideDown</string>
-        <string>UIInterfaceOrientationLandscapeLeft</string>
-        <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
 </dict>
 </plist>

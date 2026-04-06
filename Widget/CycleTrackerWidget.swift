@@ -108,6 +108,7 @@ struct CycleTrackerWidgetEntryView : View {
     }
 }
 
+@main
 struct CycleTrackerWidget: Widget {
     let kind: String = "CycleTrackerWidget"
 
@@ -117,20 +118,34 @@ struct CycleTrackerWidget: Widget {
         }
         .configurationDisplayName("周期追踪")
         .description("显示置顶事件的距离天数")
-        .supportedFamilies([.systemMedium])
+        .supportedFamilies([.systemSmall, .systemMedium])
     }
 }
 
 struct CycleTrackerWidget_Previews: PreviewProvider {
     static var previews: some View {
-        CycleTrackerWidgetEntryView(entry: SimpleEntry(
-            date: Date(),
-            pinnedEvent: WidgetTrackedEvent(
-                name: "剪头发",
-                history: [Date().addingTimeInterval(-25 * 24 * 3600)],
-                isPinned: true
-            )
-        ))
-        .previewContext(WidgetPreviewContext(family: .systemMedium))
+        Group {
+            CycleTrackerWidgetEntryView(entry: SimpleEntry(
+                date: Date(),
+                pinnedEvent: WidgetTrackedEvent(
+                    name: "剪头发",
+                    history: [Date().addingTimeInterval(-25 * 24 * 3600)],
+                    isPinned: true
+                )
+            ))
+            .previewContext(WidgetPreviewContext(family: .systemSmall))
+            .previewDisplayName("小尺寸")
+
+            CycleTrackerWidgetEntryView(entry: SimpleEntry(
+                date: Date(),
+                pinnedEvent: WidgetTrackedEvent(
+                    name: "剪头发",
+                    history: [Date().addingTimeInterval(-25 * 24 * 3600)],
+                    isPinned: true
+                )
+            ))
+            .previewContext(WidgetPreviewContext(family: .systemMedium))
+            .previewDisplayName("中尺寸")
+        }
     }
 }

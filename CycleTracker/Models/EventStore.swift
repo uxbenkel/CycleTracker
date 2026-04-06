@@ -8,6 +8,7 @@
 import Combine
 import Foundation
 import SwiftUI
+import WidgetKit
 
 @MainActor
 final class EventStore: ObservableObject {
@@ -122,6 +123,8 @@ final class EventStore: ObservableObject {
             encoder.outputFormatting = .prettyPrinted
             let data = try encoder.encode(events)
             storage.set(data, forKey: saveKey)
+            // 数据保存后，通知小组件刷新
+            WidgetCenter.shared.reloadAllTimelines()
         } catch {
             print("保存事件失败: \(error)")
         }

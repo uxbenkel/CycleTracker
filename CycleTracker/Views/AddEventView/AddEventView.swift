@@ -12,6 +12,7 @@ struct AddEventView: View {
     @Environment(\.dismiss) var dismiss
     @State private var eventName = ""
     @State private var isPinned = false
+    @State private var selectedDate = Date()
     @FocusState private var isNameFieldFocused: Bool
     @State private var showingError = false
     @State private var errorMessage = ""
@@ -34,6 +35,7 @@ struct AddEventView: View {
                 }
 
                 Section {
+                    DatePicker("首次发生日期", selection: $selectedDate, displayedComponents: .date)
                     Toggle("置顶显示", isOn: $isPinned)
                 } footer: {
                     Text("注意：设置新事件为置顶时，会自动取消当前置顶事件。")
@@ -77,11 +79,7 @@ struct AddEventView: View {
             return
         }
         
-        // 检查置顶状态是否会导致冲突
-        if isPinned && eventStore.events.contains(where: { $0.isPinned }) {
-        }
-        
-        eventStore.addEvent(name: trimmedName, isPinned: isPinned)
+        eventStore.addEvent(name: trimmedName, isPinned: isPinned, initialDate: selectedDate)
         dismiss()
     }
 }

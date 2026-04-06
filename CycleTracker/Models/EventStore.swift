@@ -13,7 +13,12 @@ import SwiftUI
 final class EventStore: ObservableObject {
     @Published var events: [TrackedEvent] = []
 
+    // 使用 App Group 共享数据，以便小组件访问
+    private let suiteName = "group.com.taohe.CycleTracker"
     private let saveKey = "TrackedEventsData"
+    private var storage: UserDefaults {
+        UserDefaults(suiteName: suiteName) ?? .standard
+    }
 
     init() {
         loadEvents()
@@ -29,16 +34,17 @@ final class EventStore: ObservableObject {
         }
     }
 
-    func addEvent(name: String, isPinned: Bool = false) {
-        // 如果要置顶，先取消当前所有置顶
+        // 如果要置顶，先取消当前所有置顶 支持自定义初始日期的添加方法
+    func addEvent(name: String, isPinned: Bool = false, initialDate: Date = Date()) {
         if isPinned {
             for index in events.indices {
                 events[index].isPinned = false
             }
         }
 
-        let newEvent = TrackedEvent(name: name, isPinned: isPinned)
         // 置顶事件应该显示在最前面
+        var newEvent = TrackedEvent(name: name, isPinned: isPinned)
+        newEvent.recordNewEvent(on: initialDate)
         if isPinned {
             events.insert(newEvent, at: 0)
         } else {
@@ -63,7 +69,19 @@ final class EventStore: ObservableObject {
     func recordEvent(for eventId: UUID, on date: Date = Date()) {
         if let index = events.firstIndex(where: { $0.id == eventId }) {
             events[index].recordNewEvent(on: date)
+            events[index].history.sort(by: >)
             saveEvents()
+        }
+    }
+
+    // 更新历史记录中的日期
+    func updateHistoryEntry(for eventId: UUID, oldDate: Date, newDate: Date) {
+        if let index = events.firstIndex(where: { $0.id == eventId }) {
+            if let dateIndex = events[index].history.firstIndex(where: { $0 == oldDate }) {
+                events[index].history[dateIndex] = newDate
+                events[index].history.sort(by: >)
+                saveEvents()
+            }
         }
     }
 
@@ -103,16 +121,16 @@ final class EventStore: ObservableObject {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .prettyPrinted
             let data = try encoder.encode(events)
-            UserDefaults.standard.set(data, forKey: saveKey)
+            storage.set(data, forKey: saveKey)
         } catch {
             print("保存事件失败: \(error)")
         }
     }
 
-    // 从 UserDefaults 加载
+    // 从 storage 加载
     private func loadEvents() {
         do {
-            guard let data = UserDefaults.standard.data(forKey: saveKey) else {
+            guard let data = storage.data(forKey: saveKey) else {
                 events = []
                 return
             }

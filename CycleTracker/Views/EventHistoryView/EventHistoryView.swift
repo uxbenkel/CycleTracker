@@ -16,6 +16,12 @@ struct EventHistoryView: View {
     @State private var expandedYears: Set<Int> = []
     @State private var showingDeleteAllConfirm = false
     @State private var showingDeleteConfirm: Date? = nil
+
+    // 日期编辑相关状态
+    @State private var showingEditDatePicker = false
+    @State private var dateToEdit: Date? = nil
+    @State private var newSelectedDate = Date()
+
     @State private var currentEvent: TrackedEvent
 
     init(event: TrackedEvent) {
@@ -76,6 +82,23 @@ struct EventHistoryView: View {
                                                     entry.date
                                             }
                                         )
+                                        // 添加左滑操作：删除和修改
+                                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                            Button(role: .destructive) {
+                                                showingDeleteConfirm = entry.date
+                                            } label: {
+                                                Label("删除", systemImage: "trash")
+                                            }
+                                            
+                                            Button {
+                                                dateToEdit = entry.date
+                                                newSelectedDate = entry.date
+                                                showingEditDatePicker = true
+                                            } label: {
+                                                Label("修改", systemImage: "pencil")
+                                            }
+                                            .tint(.blue)
+                                        }
                                     }
                                 }
                             } header: {
@@ -155,6 +178,32 @@ struct EventHistoryView: View {
                     }
                 }
             }
+            // 修改日期的 Sheet
+            .sheet(isPresented: $showingEditDatePicker) {
+                NavigationStack {
+                    Form {
+                        DatePicker("发生日期", selection: $newSelectedDate, displayedComponents: .date)
+                    }
+                    .navigationTitle("修改记录日期")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("取消") {
+                                showingEditDatePicker = false
+                            }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("保存") {
+                                if let oldDate = dateToEdit {
+                                    eventStore.updateHistoryEntry(for: event.id, oldDate: oldDate, newDate: newSelectedDate)
+                                }
+                                showingEditDatePicker = false
+                            }
+                        }
+                    }
+                }
+                .presentationDetents([.height(200)])
+            }
             .alert(
                 "删除记录",
                 isPresented: .constant(showingDeleteConfirm != nil),
@@ -201,6 +250,7 @@ struct EventHistoryView: View {
         ) {
             eventStore.events[index].history.removeAll()
             eventStore.saveEvents()
+            currentEvent.history.removeAll()
 
         }
     }

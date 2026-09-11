@@ -19,7 +19,7 @@ struct AboutView: View {
                     Text("周期事件记录器")
                         .font(.largeTitle)
                         .fontWeight(.bold)
-                    Text("版本 1.0.0")
+                    Text("版本 1.2")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                 }

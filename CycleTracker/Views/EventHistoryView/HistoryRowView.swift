@@ -9,6 +9,7 @@ import SwiftUI
 
 // 历史记录行视图
 struct HistoryRowView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let entry: TrackedEvent.HistoryEntry
     let onDelete: () -> Void
 
@@ -32,7 +33,8 @@ struct HistoryRowView: View {
                             .foregroundColor(.blue)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
-                            .background(Color.blue.opacity(0.1))
+                            // 深色模式提高标签底色强度，保持与列表背景的区分
+                            .background(Color.blue.opacity(colorScheme == .dark ? 0.22 : 0.1))
                             .cornerRadius(6)
                     } else {
                         Text("首次记录")
@@ -40,7 +42,7 @@ struct HistoryRowView: View {
                             .foregroundColor(.green)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
-                            .background(Color.green.opacity(0.1))
+                            .background(Color.green.opacity(colorScheme == .dark ? 0.22 : 0.1))
                             .cornerRadius(6)
                     }
 

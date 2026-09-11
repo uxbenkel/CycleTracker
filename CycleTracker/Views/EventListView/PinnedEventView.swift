@@ -47,7 +47,7 @@ struct PinnedEventView: View {
         .background(Color(.systemBackground))
         .overlay(
             RoundedRectangle(cornerRadius: 0)
-                .stroke(Color.gray.opacity(0.2), lineWidth: 0.5)
+                .stroke(Color(.separator), lineWidth: 1)
         )
     }
 

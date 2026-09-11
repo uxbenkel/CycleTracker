@@ -24,7 +24,8 @@ struct UnpinnedEventRow: View {
             if let days = event.daysSinceLastEvent {
                 Text("\(days)")
                     .font(.system(size: 18, weight: .bold, design: .default))
-                    .foregroundColor(.white)
+                    // 橙黄底色使用深色数字，保证两种系统外观下都清晰
+                    .foregroundColor((30...55).contains(days) ? .black : .white)
                     .frame(minWidth: 44, minHeight: 28)
                     .background(
                         Capsule()
@@ -59,10 +60,10 @@ struct UnpinnedEventRow: View {
 
     private func backgroundColorForDays(_ days: Int) -> Color {
         switch days {
-        case 0..<30: return Color.blue.opacity(0.8)
-        case 30..<45: return Color.orange.opacity(0.8)
-        case 45...55: return Color.yellow.opacity(0.8)
-        default: return Color.red.opacity(0.8)
+        case 0..<30: return .blue
+        case 30..<45: return .orange
+        case 45...55: return .yellow
+        default: return .red
         }
     }
 

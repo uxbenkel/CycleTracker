@@ -14,6 +14,9 @@ struct EventListView: View {
     @State private var showingActionSheet = false
     @State private var selectedEvent: TrackedEvent? = nil
     @State private var isEditing = false
+    @State private var reminderEvent: TrackedEvent?
+    // 暂存要设置提醒的事件，等操作弹窗关闭后再打开提醒弹窗
+    @State private var pendingReminderEvent: TrackedEvent?
 
     // 添加加载状态
     @State private var isLoading = true
@@ -179,7 +182,13 @@ struct EventListView: View {
         .sheet(isPresented: $showingAddEvent) {
             AddEventView()
         }
-        .sheet(isPresented: $showingActionSheet) {
+        .sheet(isPresented: $showingActionSheet, onDismiss: {
+            // 在关闭回调中切换弹窗，避免两个 Sheet 同时展示
+            if let event = pendingReminderEvent {
+                pendingReminderEvent = nil
+                reminderEvent = event
+            }
+        }) {
             // 强制使用一个事件
             if let event =
                 selectedEvent ?? eventStore.pinnedEvent ?? eventStore
@@ -193,6 +202,10 @@ struct EventListView: View {
                     },
                     onHistory: {
                         showingHistoryForEvent = event
+                        showingActionSheet = false
+                    },
+                    onReminder: {
+                        pendingReminderEvent = event
                         showingActionSheet = false
                     },
                     onDelete: {
@@ -209,7 +222,7 @@ struct EventListView: View {
                         )
                         showingActionSheet = false
                     }
-                ).presentationDetents([.fraction(0.56)])
+                ).presentationDetents([.fraction(0.7), .large])
                     .presentationDragIndicator(.visible)
             } else {
                 // 如果事件为空，显示空视图
@@ -231,6 +244,11 @@ struct EventListView: View {
         }
         .sheet(item: $showingHistoryForEvent) { event in
             EventHistoryView(event: event)
+        }
+        .sheet(item: $reminderEvent) { event in
+            ReminderSettingsView(eventID: event.id)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
     }
 

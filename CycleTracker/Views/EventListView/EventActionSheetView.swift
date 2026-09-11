@@ -12,6 +12,7 @@ struct EventActionSheetView: View {
     let event: TrackedEvent
     let onRecord: () -> Void
     let onHistory: () -> Void
+    let onReminder: () -> Void
     let onDelete: () -> Void
     let onTogglePin: () -> Void
 
@@ -44,6 +45,10 @@ struct EventActionSheetView: View {
                         )
                     }
 
+                    Button(action: onReminder) {
+                        ActionButton(icon: "bell", title: "设置提醒", color: .purple)
+                    }
+
                     Button(action: onTogglePin) {
                         ActionButton(
                             icon: event.isPinned ? "pin.slash" : "pin",
@@ -67,18 +72,22 @@ struct EventActionSheetView: View {
 
             Spacer()
 
-            Button("取消") {
+            Button {
                 dismiss()
+            } label: {
+                Text("取消")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding()
             }
-            .font(.headline)
-            .foregroundColor(.secondary)
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(Color(.systemGray5))
-            .cornerRadius(10)
             .padding(.horizontal)
             .padding(.bottom, 20)
         }
+        // 使用不透明的系统背景和按钮描边，深浅色下都能区分按钮与弹窗
+        .background(Color(.systemGroupedBackground))
+        .presentationBackground(Color(.systemGroupedBackground))
+        .buttonStyle(EventActionButtonStyle())
         .alert("确认删除", isPresented: $showingDeleteConfirm) {
             Button("删除", role: .destructive) {
                 onDelete()
@@ -99,13 +108,35 @@ struct ActionButton: View {
         HStack {
             Image(systemName: icon)
                 .foregroundColor(color)
+                .font(.title3)
+                .frame(width: 28)
             Text(title)
                 .font(.title3)
                 .foregroundColor(.primary)
             Spacer()
         }
         .padding()
-        .background(Color(.systemGray5))
-        .cornerRadius(10)
+    }
+}
+
+// 统一操作按钮样式：浅色下使用淡细边框，不添加额外阴影，保留轻微按下反馈
+struct EventActionButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                configuration.isPressed ? Color(.systemGray5) : Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: 12)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(
+                        colorScheme == .light ? Color(.systemGray3).opacity(0.75) : Color(.systemGray2),
+                        lineWidth: colorScheme == .light ? 0.5 : 1
+                    )
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }

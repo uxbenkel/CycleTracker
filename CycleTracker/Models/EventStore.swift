@@ -13,6 +13,11 @@ import WidgetKit
 @MainActor
 final class EventStore: ObservableObject {
     @Published var events: [TrackedEvent] = []
+    // 将通知调度失败的原因提供给提醒设置页展示
+    @Published var reminderError: String?
+    let reminders = ReminderNotifications()
+    // 保存最近一次调度任务，供设置提醒时等待完成
+    private var reminderUpdate: Task<Void, Never>?
 
     // 使用 App Group 共享数据，以便小组件访问
     private let suiteName = "group.com.taohe.CycleTracker"
@@ -125,9 +130,27 @@ final class EventStore: ObservableObject {
             storage.set(data, forKey: saveKey)
             // 数据保存后，通知小组件刷新
             WidgetCenter.shared.reloadAllTimelines()
+            // 数据变更后统一重排提醒，覆盖新增记录、日期修改、删除及导入恢复等操作
+            let snapshot = events
+            reminderUpdate = Task {
+                reminderError = await reminders.synchronize(events: snapshot)
+            }
         } catch {
             print("保存事件失败: \(error)")
         }
+    }
+
+    // App 活跃时补充后续通知，不改变已保存的提醒频率
+    func refreshReminders() async {
+        reminderError = await reminders.synchronize(events: events)
+    }
+
+    // 保存事件提醒设置，传入 nil 表示删除提醒；等待通知队列同步完成
+    func setReminder(for eventID: UUID, interval: ReminderInterval?) async {
+        guard let index = events.firstIndex(where: { $0.id == eventID }) else { return }
+        events[index].reminderInterval = interval
+        saveEvents()
+        await reminderUpdate?.value
     }
 
     // 从 storage 加载

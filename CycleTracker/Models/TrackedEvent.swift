@@ -15,6 +15,31 @@ struct TrackedEvent: Identifiable, Codable, Sendable, Equatable {
     var history: [Date]
     var isPinned: Bool
     var colorHex: String?
+    // nil 表示未设置提醒；可选字段兼容不含提醒设置的旧数据和备份
+    var reminderInterval: ReminderInterval?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, history, isPinned, colorHex, reminderInterval
+    }
+
+    // 兼容旧数据和备份：已移除的 5 秒测试值（0）按未设置提醒读取，保留事件记录
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        history = try container.decode([Date].self, forKey: .history)
+        isPinned = try container.decode(Bool.self, forKey: .isPinned)
+        colorHex = try container.decodeIfPresent(String.self, forKey: .colorHex)
+        if let value = try container.decodeIfPresent(Int.self, forKey: .reminderInterval), value != 0 {
+            guard let interval = ReminderInterval(rawValue: value) else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .reminderInterval, in: container, debugDescription: "不支持的提醒频率：\(value)")
+            }
+            reminderInterval = interval
+        } else {
+            reminderInterval = nil
+        }
+    }
 
     // 历史记录条目结构
     struct HistoryEntry {

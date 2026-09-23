@@ -11,12 +11,18 @@ struct EventListView: View {
     @EnvironmentObject var eventStore: EventStore
     @State private var showingAddEvent = false
     @State private var showingHistoryForEvent: TrackedEvent? = nil
-    @State private var showingActionSheet = false
+    // 选中事件同时决定弹窗内容和是否展示，避免首次打开时状态不同步
     @State private var selectedEvent: TrackedEvent? = nil
     @State private var isEditing = false
     @State private var reminderEvent: TrackedEvent?
-    // 暂存要设置提醒的事件，等操作弹窗关闭后再打开提醒弹窗
-    @State private var pendingReminderEvent: TrackedEvent?
+    // 暂存后续操作，等待操作弹窗完全关闭后再执行
+    @State private var pendingAction: PendingAction?
+
+    private enum PendingAction {
+        case history(TrackedEvent)
+        case reminder(TrackedEvent)
+        case delete(TrackedEvent)
+    }
 
     // 添加加载状态
     @State private var isLoading = true
@@ -33,7 +39,6 @@ struct EventListView: View {
                             .onTapGesture {
                                 if !isEditing {
                                     selectedEvent = pinnedEvent
-                                    showingActionSheet = true
                                 }
                             }
                             .contextMenu {
@@ -54,7 +59,6 @@ struct EventListView: View {
                                     action: {
                                         // 删除确认在下面的事件操作弹窗中处理
                                         selectedEvent = pinnedEvent
-                                        showingActionSheet = true
                                     }
                                 ) {
                                     Label("删除", systemImage: "trash")
@@ -100,7 +104,6 @@ struct EventListView: View {
                                     .onTapGesture {
                                         if !isEditing {
                                             selectedEvent = event
-                                            showingActionSheet = true
                                         }
                                     }
                                     .contextMenu {
@@ -120,8 +123,6 @@ struct EventListView: View {
                                             role: .destructive,
                                             action: {
                                                 selectedEvent = event
-                                                showingActionSheet =
-                                                    true
                                             }
                                         ) {
                                             Label(
@@ -147,7 +148,6 @@ struct EventListView: View {
                                     .swipeActions(edge: .trailing) {
                                         Button(role: .destructive) {
                                             selectedEvent = event
-                                            showingActionSheet = true
                                         } label: {
                                             Label(
                                                 "删除",
@@ -182,65 +182,36 @@ struct EventListView: View {
         .sheet(isPresented: $showingAddEvent) {
             AddEventView()
         }
-        .sheet(isPresented: $showingActionSheet, onDismiss: {
-            // 在关闭回调中切换弹窗，避免两个 Sheet 同时展示
-            if let event = pendingReminderEvent {
-                pendingReminderEvent = nil
-                reminderEvent = event
-            }
-        }) {
-            // 强制使用一个事件
-            if let event =
-                selectedEvent ?? eventStore.pinnedEvent ?? eventStore
-                .unpinnedEvents.first ?? eventStore.events.first
-            {
-                EventActionSheetView(
-                    event: event,
-                    onRecord: {
-                        eventStore.recordEvent(for: event.id)
-                        showingActionSheet = false
-                    },
-                    onHistory: {
-                        showingHistoryForEvent = event
-                        showingActionSheet = false
-                    },
-                    onReminder: {
-                        pendingReminderEvent = event
-                        showingActionSheet = false
-                    },
-                    onDelete: {
-                        showingActionSheet = false
-                        // 延迟执行，确保弹窗先关闭
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                            confirmDeleteEvent(event: event)
-                        }
-                    },
-                    onTogglePin: {
-                        eventStore.updateEvent(
-                            eventId: event.id,
-                            isPinned: !event.isPinned
-                        )
-                        showingActionSheet = false
-                    }
-                ).presentationDetents([.fraction(0.7), .large])
-                    .presentationDragIndicator(.visible)
-            } else {
-                // 如果事件为空，显示空视图
-                VStack(spacing: 20) {
-                    Text("暂无事件")
-                        .font(.headline)
-                    Text("请先添加一个事件")
-                        .foregroundColor(.secondary)
-                    Button("添加事件") {
-                        showingActionSheet = false
-                        showingAddEvent = true
-                    }
-                    .padding()
-                    Button("关闭") {
-                        showingActionSheet = false
-                    }
+        // 使用弹窗传入的事件构建全部操作，不再回退到置顶或列表首个事件
+        .sheet(item: $selectedEvent, onDismiss: handleActionSheetDismiss) { event in
+            EventActionSheetView(
+                event: event,
+                onRecord: {
+                    eventStore.recordEvent(for: event.id)
+                    selectedEvent = nil
+                },
+                onHistory: {
+                    pendingAction = .history(event)
+                    selectedEvent = nil
+                },
+                onReminder: {
+                    pendingAction = .reminder(event)
+                    selectedEvent = nil
+                },
+                onDelete: {
+                    pendingAction = .delete(event)
+                    selectedEvent = nil
+                },
+                onTogglePin: {
+                    eventStore.updateEvent(
+                        eventId: event.id,
+                        isPinned: !event.isPinned
+                    )
+                    selectedEvent = nil
                 }
-            }
+            )
+            .presentationDetents([.fraction(0.7), .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(item: $showingHistoryForEvent) { event in
             EventHistoryView(event: event)
@@ -249,6 +220,21 @@ struct EventListView: View {
             ReminderSettingsView(eventID: event.id)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+    }
+
+    // 关闭后再切换页面或删除已确认的事件，避免弹窗重叠及固定延时带来的不确定性
+    private func handleActionSheetDismiss() {
+        guard let action = pendingAction else { return }
+        pendingAction = nil
+
+        switch action {
+        case .history(let event):
+            showingHistoryForEvent = event
+        case .reminder(let event):
+            reminderEvent = event
+        case .delete(let event):
+            confirmDeleteEvent(event: event)
         }
     }
 
